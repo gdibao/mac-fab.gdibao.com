@@ -1,0 +1,136 @@
+name: Build Chituo macOS
+
+run-name: Chituo macOS ${{ inputs.source_tag }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_tag:
+        description: Immutable tag in the private source repository
+        required: true
+        type: string
+      source_sha:
+        description: Expected 40-character source commit
+        required: true
+        type: string
+      version:
+        description: Release version without the v prefix
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: chituo-macos-${{ inputs.source_tag }}
+  cancel-in-progress: false
+
+env:
+  CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+  DESKTOP_BUILD_PROFILE_PATH: ${{ github.workspace }}/source/apps/desktop/branding/chituo/desktop-build-profile.json
+  ELECTRON_BUILDER_BINARIES_MIRROR: https://npmmirror.com/mirrors/electron-builder-binaries/
+  ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
+  NODEJS_VERSION: '24.18.0'
+  NODE_OPTIONS: --max-old-space-size=16384
+  OFFICIAL_CLOUD_SERVER: https://fab.gdibao.com
+  UPDATE_SERVER_URL: ''
+  npm_config_registry: https://registry.npmmirror.com
+
+jobs:
+  build:
+    name: Build ${{ matrix.label }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: arm64
+            label: macOS Apple Silicon
+            os: macos-15
+          - id: x64
+            label: macOS Intel
+            os: macos-15-intel
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Check out immutable private source
+        uses: actions/checkout@v6
+        with:
+          repository: gdibao/fab.gdibao.com
+          ref: ${{ inputs.source_tag }}
+          ssh-key: ${{ secrets.PRIVATE_REPO_SSH_KEY }}
+          persist-credentials: false
+          fetch-depth: 0
+          path: source
+
+      - name: Verify immutable source
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ inputs.source_sha }}
+          SOURCE_TAG: ${{ inputs.source_tag }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          test "$EXPECTED_SHA" = "$(git -C source rev-parse HEAD)"
+          test "$EXPECTED_SHA" = "$(git -C source rev-list -n 1 "$SOURCE_TAG")"
+          test "$SOURCE_TAG" = "v$VERSION"
+          test "$(sha256sum source/apps/desktop/branding/chituo/logo.png | cut -d' ' -f1)" = \
+            '527f73df2df1515be0f9b5b13cb87ec2dfef333fc7b1e44eedb2c2899461a44d'
+
+      - name: Set up desktop build
+        uses: ./source/.github/actions/desktop-build-setup
+        with:
+          node-version: ${{ env.NODEJS_VERSION }}
+          prefer-china-mirrors: true
+
+      - name: Set immutable package version
+        shell: bash
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const file = 'source/apps/desktop/package.json';
+          const pkg = JSON.parse(fs.readFileSync(file, 'utf8'));
+          pkg.name = 'lobehub-desktop';
+          pkg.version = process.env.VERSION;
+          fs.writeFileSync(file, `${JSON.stringify(pkg, null, 2)}\n`);
+          NODE
+
+      - name: Verify build profile
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd source/apps/desktop
+          node ../../node_modules/vitest/vitest.mjs run desktop-build-profile.test.ts \
+            --config vitest.config.mts
+
+      - name: Build macOS package
+        shell: bash
+        run: npm run package:mac --prefix ./source/apps/desktop
+
+      - name: Validate macOS artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          dmgs=(source/apps/desktop/release/*.dmg)
+          zips=(source/apps/desktop/release/*.zip)
+          test "${#dmgs[@]}" -eq 1
+          test "${#zips[@]}" -eq 1
+          test -s "${dmgs[0]}"
+          test -s "${zips[0]}"
+          mkdir -p "$RUNNER_TEMP/chituo-macos"
+          ditto -x -k "${zips[0]}" "$RUNNER_TEMP/chituo-macos"
+          node source/apps/desktop/scripts/validatePackagedIdentity.mjs "$RUNNER_TEMP/chituo-macos"
+          (cd source/apps/desktop/release && sha256sum *.dmg *.zip > "SHA256SUMS-macos-${{ matrix.id }}.txt")
+
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@v6
+        with:
+          name: chituo-macos-${{ matrix.id }}-${{ inputs.version }}
+          if-no-files-found: error
+          retention-days: 7
+          path: |
+            source/apps/desktop/release/*.dmg
+            source/apps/desktop/release/*.zip
+            source/apps/desktop/release/SHA256SUMS-macos-${{ matrix.id }}.txt
