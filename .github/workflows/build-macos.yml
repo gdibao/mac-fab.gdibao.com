@@ -27,7 +27,7 @@ concurrency:
 
 env:
   CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-  DESKTOP_BUILD_PROFILE_PATH: ${{ github.workspace }}/source/apps/desktop/branding/chituo/desktop-build-profile.json
+  DESKTOP_BUILD_PROFILE_PATH: ${{ github.workspace }}/apps/desktop/branding/chituo/desktop-build-profile.json
   ELECTRON_BUILDER_BINARIES_MIRROR: https://npmmirror.com/mirrors/electron-builder-binaries/
   ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
   NODEJS_VERSION: '24.18.0'
@@ -59,7 +59,6 @@ jobs:
           ssh-key: ${{ secrets.PRIVATE_REPO_SSH_KEY }}
           persist-credentials: false
           fetch-depth: 0
-          path: source
 
       - name: Verify immutable source
         shell: bash
@@ -69,14 +68,14 @@ jobs:
           VERSION: ${{ inputs.version }}
         run: |
           set -euo pipefail
-          test "$EXPECTED_SHA" = "$(git -C source rev-parse HEAD)"
-          test "$EXPECTED_SHA" = "$(git -C source rev-list -n 1 "$SOURCE_TAG")"
+          test "$EXPECTED_SHA" = "$(git rev-parse HEAD)"
+          test "$EXPECTED_SHA" = "$(git rev-list -n 1 "$SOURCE_TAG")"
           test "$SOURCE_TAG" = "v$VERSION"
-          test "$(sha256sum source/apps/desktop/branding/chituo/logo.png | cut -d' ' -f1)" = \
+          test "$(sha256sum apps/desktop/branding/chituo/logo.png | cut -d' ' -f1)" = \
             '527f73df2df1515be0f9b5b13cb87ec2dfef333fc7b1e44eedb2c2899461a44d'
 
       - name: Set up desktop build
-        uses: ./source/.github/actions/desktop-build-setup
+        uses: ./.github/actions/desktop-build-setup
         with:
           node-version: ${{ env.NODEJS_VERSION }}
           prefer-china-mirrors: true
@@ -89,7 +88,7 @@ jobs:
           set -euo pipefail
           node - <<'NODE'
           const fs = require('node:fs');
-          const file = 'source/apps/desktop/package.json';
+          const file = 'apps/desktop/package.json';
           const pkg = JSON.parse(fs.readFileSync(file, 'utf8'));
           pkg.name = 'lobehub-desktop';
           pkg.version = process.env.VERSION;
@@ -100,29 +99,29 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cd source/apps/desktop
+          cd apps/desktop
           node ../../node_modules/vitest/vitest.mjs run desktop-build-profile.test.ts \
             --config vitest.config.mts
 
       - name: Build macOS package
         shell: bash
-        run: npm run package:mac --prefix ./source/apps/desktop
+        run: npm run package:mac --prefix ./apps/desktop
 
       - name: Validate macOS artifacts
         shell: bash
         run: |
           set -euo pipefail
           shopt -s nullglob
-          dmgs=(source/apps/desktop/release/*.dmg)
-          zips=(source/apps/desktop/release/*.zip)
+          dmgs=(apps/desktop/release/*.dmg)
+          zips=(apps/desktop/release/*.zip)
           test "${#dmgs[@]}" -eq 1
           test "${#zips[@]}" -eq 1
           test -s "${dmgs[0]}"
           test -s "${zips[0]}"
           mkdir -p "$RUNNER_TEMP/chituo-macos"
           ditto -x -k "${zips[0]}" "$RUNNER_TEMP/chituo-macos"
-          node source/apps/desktop/scripts/validatePackagedIdentity.mjs "$RUNNER_TEMP/chituo-macos"
-          (cd source/apps/desktop/release && sha256sum *.dmg *.zip > "SHA256SUMS-macos-${{ matrix.id }}.txt")
+          node apps/desktop/scripts/validatePackagedIdentity.mjs "$RUNNER_TEMP/chituo-macos"
+          (cd apps/desktop/release && sha256sum *.dmg *.zip > "SHA256SUMS-macos-${{ matrix.id }}.txt")
 
       - name: Upload macOS artifacts
         uses: actions/upload-artifact@v6
@@ -131,6 +130,6 @@ jobs:
           if-no-files-found: error
           retention-days: 7
           path: |
-            source/apps/desktop/release/*.dmg
-            source/apps/desktop/release/*.zip
-            source/apps/desktop/release/SHA256SUMS-macos-${{ matrix.id }}.txt
+            apps/desktop/release/*.dmg
+            apps/desktop/release/*.zip
+            apps/desktop/release/SHA256SUMS-macos-${{ matrix.id }}.txt
