@@ -1,7 +1,7 @@
 # Chituo AI macOS Build Runner
 
 This public repository contains only the macOS release workflow for Chituo AI.
-The product source remains in the private `gdibao/fab.gdibao.com` repository.
+The product source remains in the private `gdibao/secsgem.com.cn` repository.
 
 The workflow is manual-only. It checks out an immutable private tag with a
 read-only deploy key, verifies the requested commit, builds Intel and Apple Silicon

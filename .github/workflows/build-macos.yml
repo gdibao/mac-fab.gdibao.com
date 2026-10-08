@@ -32,7 +32,7 @@ env:
   ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
   NODEJS_VERSION: '24.18.0'
   NODE_OPTIONS: --max-old-space-size=16384
-  OFFICIAL_CLOUD_SERVER: https://fab.gdibao.com
+  OFFICIAL_CLOUD_SERVER: https://fab.secsgem.com.cn
   UPDATE_SERVER_URL: ''
   npm_config_registry: https://registry.npmmirror.com
 
@@ -54,7 +54,7 @@ jobs:
       - name: Check out immutable private source
         uses: actions/checkout@v6
         with:
-          repository: gdibao/fab.gdibao.com
+          repository: gdibao/secsgem.com.cn
           ref: ${{ inputs.source_tag }}
           ssh-key: ${{ secrets.PRIVATE_REPO_SSH_KEY }}
           persist-credentials: false
